@@ -1,27 +1,31 @@
 {
-    "configurations": [
-        {
-            "name": "debug cmake build",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/f1livegp",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "MIMode": "gdb",
-        },
-        {
-            "name": "run cmake build",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/build/f1livegp",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "MIMode": "gdb",
-            "preLaunchTask": "cmake release build",
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "build & debug (cmake)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/f1livegp",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "cmake debug"
+    },
+    {
+      "name": "build release (cmake)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/f1livegp",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "cmake release"
+    }
+  ]
 }
