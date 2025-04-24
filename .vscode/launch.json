@@ -1,0 +1,27 @@
+{
+    "configurations": [
+        {
+            "name": "debug cmake build",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/f1livegp",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "MIMode": "gdb",
+        },
+        {
+            "name": "run cmake build",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/f1livegp",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "MIMode": "gdb",
+            "preLaunchTask": "cmake release build",
+        }
+    ]
+}
