@@ -36,15 +36,6 @@ namespace strutils
 
 namespace curlutils
 {
-    namespace
-    {
-        struct response
-        {
-            char* ptr;
-            size_t size;
-        };
-    }
-
     size_t write_cb(void* contents, size_t size_in, size_t nmemb_in, void* user_data = nullptr)
     {
         size_t size = size_in * nmemb_in;

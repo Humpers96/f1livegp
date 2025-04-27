@@ -95,25 +95,25 @@ json get_stints_json()
   return j;
 }
 
+void print_json(const json& js)
+{
+  std::cout << std::setw(4) << js << std::endl;
+}
+
 int main() {
   using namespace ftxui;
 
   if (!curl) return -1;
   
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlutils::write_cb);
-  
   std::string response;
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlutils::write_cb);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
-  std::string url = "https://api.openf1.org/v1/drivers?session_key=latest";
-
-  std::cout << url << std::endl;
-
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
+  curl_easy_setopt(curl, CURLOPT_URL, drivers_url.c_str());
   curl_easy_perform(curl);
 
   json j = json::parse(response);
-
   std::vector<driver> drivers;
 
   for (const auto& object : j)
@@ -121,18 +121,34 @@ int main() {
     drivers.emplace_back(object);
   }
 
-  std::vector<std::vector<std::string>> rows
+  std::string track_url = "https://api.openf1.org/v1/meetings?meeting_key=latest";
+  curl_easy_setopt(curl, CURLOPT_URL, track_url.c_str());
+  response.clear();
+  curl_easy_perform(curl);
+
+  j.clear();
+  j = json::parse(response);
+
+  track location = *j.begin();
+
+  auto header = vbox(
+    text(location.broadcast_name) | inverted,
+    hbox(
+      text(location.track_name), text(" -- "), text(location.country)
+    )
+  );
+  
+  std::vector<std::vector<std::string>> table_rows
   {
     { "POS", "NAME", "INTERVAL", "TO LEAD", "SECTOR 1", "SECTOR 2", "SECTOR 3", "LATEST LAP", "FASTEST LAP", "PIT/OUT", "TYRES", "TYRE AGE" },
   };
 
   for (int i = 0; i < 20 ; i++)
   {
-    rows.push_back({ std::to_string(i + 1), drivers[i].name, "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"});
+    table_rows.push_back({ std::to_string(i + 1), drivers[i].name, "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"});
   }
 
-  auto table = Table(rows);
-
+  Table table = Table(table_rows);
   // auto table = Table({
   //   { "POS",  "NAME", "INTERVAL",   "TO LEAD",    "SECTOR 1", "SECTOR 2", "SECTOR 3", "LATEST LAP", "FASTEST LAP",  "PIT/OUT",  "TYRES",  "TYRE AGE" },
   //   { "1",    "XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
@@ -159,7 +175,12 @@ int main() {
 
   decorate_table(table);
 
-  auto document = table.Render();
+  // auto document = table.Render();
+  auto document = vbox(
+    header,
+    table.Render()
+  );
+
   auto screen = Screen::Create(Dimension::Fit(document, /*extend_beyond_screen=*/true));
   Render(screen, document);
   screen.Print();

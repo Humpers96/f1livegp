@@ -68,13 +68,26 @@ class driver
   std::string name;
 
   session sesh;
-
-  private:
-
 };
 
-void from_json(const nlohmann::json& j, driver& d)
+class track
 {
-  j.at("name_acronym").get_to(d.name);
-  j.at("driver_number").get_to(d.no);
+  public:
+
+  std::string broadcast_name;
+  std::string country;
+  std::string track_name;
+};
+
+void from_json(const nlohmann::json& js, driver& dr)
+{
+  js.at("name_acronym").get_to(dr.name);
+  js.at("driver_number").get_to(dr.no);
+}
+
+void from_json(const nlohmann::json& js, track& tr)
+{
+  js.at("meeting_official_name").get_to(tr.broadcast_name);
+  js.at("country_name").get_to(tr.country);
+  js.at("location").get_to(tr.track_name);
 }
