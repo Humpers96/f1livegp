@@ -76,7 +76,19 @@ class track
 
   std::string broadcast_name;
   std::string country;
+  std::string location;
   std::string track_name;
+
+  std::vector<std::string> to_strings()
+  {
+    std::vector<std::string> ret;
+
+    ret.push_back(country);
+    if (location != country) ret.push_back(location);
+    if (track_name != country && track_name != location) ret.push_back(track_name);
+
+    return ret;
+  }
 };
 
 void from_json(const nlohmann::json& js, driver& dr)
@@ -89,5 +101,6 @@ void from_json(const nlohmann::json& js, track& tr)
 {
   js.at("meeting_official_name").get_to(tr.broadcast_name);
   js.at("country_name").get_to(tr.country);
-  js.at("location").get_to(tr.track_name);
+  js.at("location").get_to(tr.location);
+  js.at("circuit_short_name").get_to(tr.track_name);
 }

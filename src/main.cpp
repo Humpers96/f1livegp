@@ -15,28 +15,7 @@
 #include "f1-helpers.h"
 #include "utils.hpp"
 
-typedef std::vector<std::string> stringvec;
 using namespace nlohmann;
-
-CURL* curl = curl_easy_init();
-
-stringvec table_row(const driver& driver)
-{
-  return stringvec{ std::initializer_list<std::string>{
-    driver.name,
-    "+0:00.000" // driver.timings.interval
-    "+0:00.000" // driver.timings.gap
-    "00.000"    // driver.timings.sector_1
-    "00.000"    // driver.timings.sector_2
-    "00.000"    // driver.timings.sector_3
-    "0:00.000"  // driver.timings.latest_lap
-    "0:00.000"  // driver.timings.fastest_lap
-    "PIT/OUT",
-    "TYRES",
-    "TYRE AGE"
-  }};
-}
-
 void decorate_table(ftxui::Table& table)
 {
   using namespace ftxui;
@@ -46,6 +25,7 @@ void decorate_table(ftxui::Table& table)
 
   table.SelectColumn(1).DecorateCells(size(WIDTH, EQUAL, 5));      // NAME width
   table.SelectColumns(2, 3).DecorateCells(size(WIDTH, EQUAL, 11)); // INTERVAL/LEAD width
+  table.SelectColumns(7, 8).DecorateCells(size(WIDTH, EQUAL, 10)); // LAST/BEST LAP width
   table.SelectColumn(9).DecorateCells(size(WIDTH, EQUAL, 9));      // PIT/OUT width
 
   table.SelectRow(0).SeparatorVertical(LIGHT);
@@ -100,9 +80,44 @@ void print_json(const json& js)
   std::cout << std::setw(4) << js << std::endl;
 }
 
+/**
+ * general execution order:
+ * - req latest track details
+ *   - req weather?
+ * - req drivers (number, acronym)
+ * - req position
+ * - req tyres & age (possibly needs to be done after race start?)
+ * - poll race control for green flag
+ *   - retain timestamp of green flag for first lap/sector 1 calcs
+ *  
+ * main req loop:
+ * - req position
+ * - req intervals (interval, gap to leader)
+ * - req laps (sector 1/2/3, duration, lap number, is out lap)
+ * - req stints (compound, tyre age, lap start)
+ * - req race control (unsure what this will look like)
+ * 
+ * req notes:
+ * - best to filter by "after this timestamp" to prevent having to make 20 separate reqs per driver
+ * - need to find best way to filter to only latest capture
+ * - do NOT forget about URI encoding ffs
+ *   - should be simple enough to do manually
+ *   - if not, should consider boost
+ *     - would really rather not consider boost
+ * 
+ * main widgets:
+ * - headers
+ *   - gp title
+ *   - country -- location -- track (check for matches & hide duplicates)
+ *   - weather somewhere here?
+ * - table
+ * - race control ticker
+*/
+
 int main() {
   using namespace ftxui;
 
+  CURL* curl = curl_easy_init();
   if (!curl) return -1;
   
   std::string response;
@@ -130,22 +145,28 @@ int main() {
   j = json::parse(response);
 
   track location = *j.begin();
+  auto location_header_strings = location.to_strings();
+  std::vector<Element> location_hbox;
+
+  for (auto it = location_header_strings.begin(); it != location_header_strings.end(); ++it)
+  {
+    location_hbox.push_back(text(*it));
+    if (it != location_header_strings.end() - 1) location_hbox.push_back(text(" -- "));
+  }
 
   auto header = vbox(
     text(location.broadcast_name) | inverted,
-    hbox(
-      text(location.track_name), text(" -- "), text(location.country)
-    )
+    hbox(location_hbox)
   );
   
   std::vector<std::vector<std::string>> table_rows
   {
-    { "POS", "NAME", "INTERVAL", "TO LEAD", "SECTOR 1", "SECTOR 2", "SECTOR 3", "LATEST LAP", "FASTEST LAP", "PIT/OUT", "TYRES", "TYRE AGE" },
+    { "POS", "NAME", "INTERVAL", "TO LEAD", "SECTOR 1", "SECTOR 2", "SECTOR 3", "LAST LAP", "BEST LAP", "PIT/OUT", "TYRES", "TYRE AGE" },
   };
 
   for (int i = 0; i < 20 ; i++)
   {
-    table_rows.push_back({ std::to_string(i + 1), drivers[i].name, "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"});
+    table_rows.push_back({ std::to_string(i + 1), drivers[i].name, "+0:00.000", "+0:00.000", "00.000", "00.000", "00.000", "0:00.000", "0:00.000", "IN PITS", "(S)" , "00 LAPS" });
   }
 
   Table table = Table(table_rows);
