@@ -114,6 +114,36 @@ void print_json(const json& js)
  * - race control ticker
 */
 
+void send_and_write_curl_req(CURL* curl, const std::string& uri, void* buff)
+{
+	curl_easy_setopt(curl, CURLOPT_URL, uri.c_str());
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, buff);
+	curl_easy_perform(curl);
+};
+
+json try_curl_to_json(CURL* curl, const std::string& uri)
+{
+	try
+	{
+		std::string response;
+		send_and_write_curl_req(curl, uri, &response);
+		return json::parse(response);
+	}
+	catch(const json::exception& e)
+	{
+		std::cerr << "unable to parse response to json (" << uri << ")\n" << e.what() << '\n';
+		return json{};
+	}
+
+	return json{};
+}
+
+template<typename T>
+T req(const json& js)
+{
+	return static_cast<T>(js);
+}
+
 int main() {
   using namespace ftxui;
 
@@ -133,7 +163,7 @@ int main() {
 
   for (const auto& object : j)
   {
-    drivers.emplace_back(object);
+	drivers.push_back(req<driver>(object));
   }
 
   std::string track_url = "https://api.openf1.org/v1/meetings?meeting_key=latest";
@@ -144,7 +174,9 @@ int main() {
   j.clear();
   j = json::parse(response);
 
-  track location = *j.begin();
+  //track location = *j.begin();
+  track location = req<track>(*j.begin());
+  
   auto location_header_strings = location.to_strings();
   std::vector<Element> location_hbox;
 
