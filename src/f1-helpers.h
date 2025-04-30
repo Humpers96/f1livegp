@@ -38,6 +38,7 @@ class lap
 class times
 {
   public:
+
     milliseconds interval;
     milliseconds gap;
 

@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <thread>
 
 #include "f1-helpers.h"
 #include "openf1.hpp"
@@ -137,8 +138,75 @@ json try_curl_to_json(CURL *curl, const std::string &uri)
     return json{};
 }
 
-template <typename T>
-T req(const json &js) { return static_cast<T>(js); }
+std::unique_ptr<track> get_latest_track_info(CURL* curl)
+{
+	const std::string track_url = "https://api.openf1.org/v1/meetings?meeting_key=latest";
+	json track_js = try_curl_to_json(curl, track_url);
+
+	while (track_js.empty())
+	{
+		std::this_thread::sleep_for(1s);
+		track_js = try_curl_to_json(curl, track_url);
+	}
+
+	return std::make_unique<track>(*track_js.begin());
+}
+
+std::unique_ptr<std::vector<driver>> get_latest_drivers(CURL* curl)
+{
+	const std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
+	json drivers_js = try_curl_to_json(curl, drivers_url);
+
+	while (drivers_js.empty())
+	{
+		std::this_thread::sleep_for(1s);
+		drivers_js = try_curl_to_json(curl, drivers_url);
+	}
+	
+	std::vector<driver> drivers_vec;
+	for (const auto& js : drivers_js)
+	{
+		drivers_vec.emplace_back(js);
+	}
+
+	return std::make_unique<std::vector<driver>>(drivers_vec);
+}
+
+ftxui::Table create_drivers_table(const std::vector<driver>& drivers)
+{
+	std::vector<std::vector<std::string>> table_rows{
+        {"POS", "NAME", "INTERVAL", "TO LEAD", "SECTOR 1", "SECTOR 2", "SECTOR 3", "LAST LAP", "BEST LAP", "PIT/OUT", "TYRES", "TYRE AGE"},
+    };
+
+	milliseconds thirty_seconds(32343);
+	milliseconds ninety_seconds(92345);
+
+    for (int i = 0; i < 20; i++)
+    {
+		const auto& driver = drivers[i];
+        table_rows.push_back(
+			{
+				std::to_string(i + 1),
+				driver.name,
+				"+" + strutils::ms_to_long_string(ninety_seconds),
+				"+" + strutils::ms_to_long_string(ninety_seconds),
+				strutils::ms_to_long_string(thirty_seconds),
+				strutils::ms_to_long_string(thirty_seconds),
+				strutils::ms_to_long_string(thirty_seconds),
+				strutils::ms_to_long_string(ninety_seconds),
+				strutils::ms_to_long_string(ninety_seconds),
+				"IN PITS", 
+				"(S)", 
+				"00 LAPS"
+			}
+		);
+	}
+
+	auto table = ftxui::Table(table_rows);
+	decorate_table(table);
+
+	return table;
+}
 
 int main()
 {
@@ -148,34 +216,12 @@ int main()
     if (!curl)
         return -1;
 
-    std::string response;
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlutils::write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlutils::write_cb);
 
-    std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
-    curl_easy_setopt(curl, CURLOPT_URL, drivers_url.c_str());
-    curl_easy_perform(curl);
+	auto location = get_latest_track_info(curl);
+	auto drivers = get_latest_drivers(curl);
 
-    json j = json::parse(response);
-    std::vector<driver> drivers;
-
-    for (const auto &object : j)
-    {
-        drivers.emplace_back(object);
-    }
-
-    std::string track_url = "https://api.openf1.org/v1/meetings?meeting_key=latest";
-    curl_easy_setopt(curl, CURLOPT_URL, track_url.c_str());
-    response.clear();
-    curl_easy_perform(curl);
-
-    j.clear();
-    j = json::parse(response);
-
-    track location = *j.begin();
-    // track location = req<track>(*j.begin());
-
-    auto location_header_strings = location.to_strings();
+    auto location_header_strings = location->to_strings();
     std::vector<Element> location_hbox;
 
     for (auto it = location_header_strings.begin(); it != location_header_strings.end(); ++it)
@@ -185,18 +231,9 @@ int main()
             location_hbox.push_back(text(" -- "));
     }
 
-    auto header = vbox(text(location.broadcast_name) | inverted, hbox(location_hbox));
+    auto header = vbox(text(location->broadcast_name) | inverted, hbox(location_hbox));
+	Table table = create_drivers_table(*drivers);
 
-    std::vector<std::vector<std::string>> table_rows{
-        {"POS", "NAME", "INTERVAL", "TO LEAD", "SECTOR 1", "SECTOR 2", "SECTOR 3", "LAST LAP", "BEST LAP", "PIT/OUT", "TYRES", "TYRE AGE"},
-    };
-
-    for (int i = 0; i < 20; i++)
-    {
-        table_rows.push_back({std::to_string(i + 1), drivers[i].name, "+0:00.000", "+0:00.000", "00.000", "00.000", "00.000", "0:00.000", "0:00.000", "IN PITS", "(S)", "00 LAPS"});
-    }
-
-    Table table = Table(table_rows);
     // auto table = Table({
     //   { "POS",  "NAME", "INTERVAL",   "TO LEAD",    "SECTOR 1", "SECTOR 2", "SECTOR 3", "LATEST LAP", "FASTEST LAP",  "PIT/OUT",  "TYRES",  "TYRE AGE" },
     //   { "1",    "XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
@@ -221,9 +258,6 @@ int main()
     //   { "20",   "XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
     // });
 
-    decorate_table(table);
-
-    // auto document = table.Render();
     auto document = vbox(header, table.Render());
 
     auto screen = Screen::Create(Dimension::Fit(document, /*extend_beyond_screen=*/true));

@@ -32,6 +32,30 @@ std::string time_now_as_string()
 {
     return time_point_to_ISO8601(system_clock::now());
 }
+
+std::string ms_to_short_string(milliseconds ms)
+{
+	int seconds = ms.count() / 1000;
+	int milliseconds = ms.count() % 1000;
+	
+	std::ostringstream os;
+	os << std::setw(2) << std::setfill('0') << seconds << '.' << std::setw(3) << milliseconds;
+	
+	return os.str();
+}
+
+std::string ms_to_long_string(milliseconds ms)
+{
+	int minutes = ms.count() / 60000;
+	std::ostringstream os;
+
+	if (minutes > 0)
+		os << std::setw(1) << minutes << ':';
+
+	os << ms_to_short_string(ms);
+	
+	return os.str();
+}
 } // namespace strutils
 
 namespace curlutils
