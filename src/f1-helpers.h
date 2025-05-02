@@ -63,8 +63,17 @@ class driver
   public:
     int no;
     std::string name;
-
+	std::string team;
+	int team_colour_hex;
     session sesh;
+};
+
+class weather
+{
+	public:
+	float air_temp;
+	float track_temp;
+	bool raining;
 };
 
 class track
@@ -75,7 +84,7 @@ class track
     std::string location;
     std::string track_name;
 
-    std::vector<std::string> to_strings()
+    std::vector<std::string> to_strings() const
     {
         std::vector<std::string> ret;
 
@@ -89,10 +98,74 @@ class track
     }
 };
 
+namespace 
+{
+std::vector<std::string> team_names = {
+    "Red Bull Racing",
+    "McLaren",
+    "Kick Sauber",
+    "Racing Bulls",
+    "Alpine",
+    "Mercedes",
+    "Aston Martin",
+    "Ferrari",
+    "Williams",
+    "Haas F1 Team"
+};
+
+const char* shorten_team_name(std::string team_name)
+{
+	if (team_name == "Red Bull Racing")
+	{
+		return "RBR";
+    } 
+	else if (team_name == "McLaren")
+	{
+		return "MCL";
+    } 
+	else if (team_name == "Kick Sauber")
+	{
+		return "SAU";
+    } 
+	else if (team_name == "Racing Bulls")
+	{
+		return "VCA";
+    } 
+	else if (team_name == "Alpine")
+	{
+		return "ALP";
+    } 
+	else if (team_name == "Mercedes")
+	{
+		return "MER";
+    } 
+	else if (team_name == "Aston Martin")
+	{
+		return "AST";
+    } 
+	else if (team_name == "Ferrari")
+	{
+		return "FER";
+    } 
+	else if (team_name == "Williams")
+	{
+		return "WIL";
+    } 
+	else if (team_name == "Haas F1 Team")
+	{
+		return "HAA";
+    }
+}
+}
+
 void from_json(const nlohmann::json &js, driver &dr)
 {
     js.at("name_acronym").get_to(dr.name);
     js.at("driver_number").get_to(dr.no);
+	std::string col = js.at("team_colour");
+
+	dr.team_colour_hex = std::stoi((std::string)js.at("team_colour"), 0, 16);
+	dr.team = shorten_team_name(js.at("team_name"));
 }
 
 void from_json(const nlohmann::json &js, track &tr)

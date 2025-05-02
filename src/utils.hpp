@@ -5,7 +5,12 @@
 
 using namespace std::chrono;
 namespace strutils
+{	
+void print_json(const nlohmann::json &js)
 {
+    std::cout << std::setw(4) << js << std::endl;
+}
+
 milliseconds time_point_to_ms(const system_clock::time_point &tp)
 {
     return duration_cast<milliseconds>(tp.time_since_epoch());
@@ -33,13 +38,13 @@ std::string time_now_as_string()
     return time_point_to_ISO8601(system_clock::now());
 }
 
-std::string ms_to_short_string(milliseconds ms)
+std::string ms_to_short_string(milliseconds ms, int remove_minutes = 0)
 {
 	int seconds = ms.count() / 1000;
 	int milliseconds = ms.count() % 1000;
 	
 	std::ostringstream os;
-	os << std::setw(2) << std::setfill('0') << seconds << '.' << std::setw(3) << milliseconds;
+	os << std::setw(2) << std::setfill('0') << seconds - (remove_minutes * 60) << '.' << std::setw(3) << milliseconds;
 	
 	return os.str();
 }
@@ -52,7 +57,7 @@ std::string ms_to_long_string(milliseconds ms)
 	if (minutes > 0)
 		os << std::setw(1) << minutes << ':';
 
-	os << ms_to_short_string(ms);
+	os << ms_to_short_string(ms, minutes);
 	
 	return os.str();
 }
