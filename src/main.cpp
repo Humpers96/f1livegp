@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <sstream>
 
 #include "f1-helpers.h"
 #include "openf1.hpp"
@@ -23,19 +24,30 @@ using namespace ftxui;
  * general execution order:
  * - req latest track details
  *   - req weather?
- * - req position
+ * - req positions
+ *   - first 20 entries are starting positions
+ *   - anything following is a position *change*
+ *   - so to get positions, get the first 20 and the apply changes 
  * - req tyres & age (possibly needs to be done after race start?)
- * - poll race control for green flag
- *   - retain timestamp of green flag for first lap/sector 1 calcs
  *
  * main req loop:
  * - timestamp = green flag + 0.25 or 0.5 seconds 
+ *   - this has to be way larger, 5-10 seconds
+ * 
  * - req position post timestamp
  * - req intervals (interval, gap to leader) post timestamp
+ * // these two first
+ * 
  * - req laps (sector 1/2/3, duration, lap number, is out lap) post timestamp
  * - req stints (compound, tyre age, lap start) post timestamp
  * - req race control (unsure what this will look like) post timestamp
- * - reverse iterate through json and update drivers with req data via driver number
+ * - push requests into buffer(s) to process
+ *   - reverse iterate through json and update drivers with req data via driver number
+ *     - find first date post timestamp and parse everything after 
+ *     - update timestamp to larger of latest date found or timestamp plus 5-10 seconds
+ * // need some frame over the api to create/queue request and parse results based on
+ * // complete driver sets, discrete sets & stallable and non-stallable requests
+ * 	- drip feed results to the ui
  * 
  * - at some point requests should be separated out into failable & non-failable
  *   - failed requests should be skipped and data should be updated next loop
@@ -85,32 +97,44 @@ json try_curl_to_json(CURL *curl, const std::string &uri)
     return json{};
 }
 
+json wait_for_response(CURL* curl, const std::string& url/*, milliseconds timeout = 1000*/)
+{
+	json ret = try_curl_to_json(curl, url);
+
+	while (ret.empty())
+	{
+		std::this_thread::sleep_for(1s);
+		ret = try_curl_to_json(curl, url);
+	}
+
+	return ret;
+}
+
 // - requests to f1 objects
 std::unique_ptr<track> get_latest_track_info(CURL* curl)
 {
-	const std::string track_url = "https://api.openf1.org/v1/meetings?meeting_key=latest";
-	json track_js = try_curl_to_json(curl, track_url);
-
-	while (track_js.empty())
-	{
-		std::this_thread::sleep_for(1s);
-		track_js = try_curl_to_json(curl, track_url);
-	}
+	//const std::string meeting_url = "https://api.openf1.org/v1/meetings?meeting_key=latest";
+	const std::string meeting_url = openf1::build_request_string(openf1::endpoint::MEETINGS);
+	json track_js = wait_for_response(curl, meeting_url);
 
 	return std::make_unique<track>(*track_js.begin());
 }
 
+std::unique_ptr<weather> get_latest_weather(CURL* curl)
+{
+	//const std::string weather_url = "https://api.openf1.org/v1/weather?session_key=latest";
+	const std::string weather_url = openf1::build_request_string(openf1::endpoint::WEATHER);
+	json weather_js = wait_for_response(curl, weather_url);
+
+	return std::make_unique<weather>(weather_js.back());
+}
+
 std::unique_ptr<std::vector<driver>> get_latest_drivers(CURL* curl)
 {
-	const std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
-	json drivers_js = try_curl_to_json(curl, drivers_url);
+	//const std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
+	const std::string drivers_url = openf1::build_request_string(openf1::endpoint::DRIVERS);
+	json drivers_js = wait_for_response(curl, drivers_url);
 
-	while (drivers_js.empty())
-	{
-		std::this_thread::sleep_for(1s);
-		drivers_js = try_curl_to_json(curl, drivers_url);
-	}
-	
 	std::vector<driver> drivers_vec;
 	for (const auto& js : drivers_js)
 	{
@@ -122,15 +146,10 @@ std::unique_ptr<std::vector<driver>> get_latest_drivers(CURL* curl)
 
 std::vector<driver> get_latest_drivers_vec(CURL* curl)
 {
-	const std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
-	json drivers_js = try_curl_to_json(curl, drivers_url);
+	// const std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
+	const std::string drivers_url = openf1::build_request_string(openf1::endpoint::DRIVERS);
+	json drivers_js = wait_for_response(curl, drivers_url);
 
-	while (drivers_js.empty())
-	{
-		std::this_thread::sleep_for(1s);
-		drivers_js = try_curl_to_json(curl, drivers_url);
-	}
-	
 	std::vector<driver> drivers_vec;
 	for (const auto& js : drivers_js)
 	{
@@ -215,7 +234,7 @@ Table create_drivers_table(const std::vector<driver>& drivers)
 }
 
 // - headers
-Element create_location_header(const track& location)
+Element create_location_header(const track& location, const weather& conditions)
 {
 	auto location_header_strings = location.to_strings();
     std::vector<Element> location_hbox;
@@ -227,7 +246,84 @@ Element create_location_header(const track& location)
             location_hbox.push_back(text(" -- "));
     }
 
-    return vbox(text(location.broadcast_name) | inverted, hbox(location_hbox));
+	std::ostringstream oss;
+
+	oss << std::setw(4) << conditions.air_temp;
+	std::string air_temp{ "Air Temp: " + oss.str() + ' ' };
+
+	oss << conditions.track_temp;
+	std::string track_temp{ "Track temp: " + oss.str() + ' ' };
+	
+	auto upper = hbox(text(location.broadcast_name), filler(), text(air_temp)) | inverted;
+	auto lower = hbox(hbox(location_hbox), filler(), text(track_temp));
+
+    return vbox(upper, lower);
+}
+
+std::vector<json> parse_to_latest_set(const json& response_json)
+{
+	std::vector<json> ret;
+
+	// std::pair<int, bool> driver_numbers[] = {
+	// 	{ 1,  false }, { 4,  false }, { 5,  false }, { 6,  false }, { 7,  false },
+	// 	{ 10, false }, { 12, false }, { 14, false }, { 16, false }, { 18, false },
+	// 	{ 22, false }, { 23, false }, { 27, false }, { 30, false }, { 31, false },
+	// 	{ 44, false }, { 55, false }, { 63, false }, { 81, false }, { 87, false }
+	// };
+
+	auto last_json_object = response_json.rbegin();
+	std::string latest_response_date;
+
+	try
+	{
+		latest_response_date = last_json_object->at("date");
+	}
+	catch(const std::exception& e)
+	{	
+		std::cerr << "unable to parse date." << std::endl;
+		std::cerr << e.what() << '\n';
+		return std::vector<json>{};
+	}
+
+	auto json_it = response_json.rbegin();
+	auto set_start_it = json_it;
+	int current_set = 0;
+
+	for (json_it; json_it != response_json.rend(); ++json_it)
+	{
+		std::string json_date{};
+
+		try
+		{
+			json_date = json_it->at("date");
+		}
+		catch(const std::exception& e)
+		{
+			std::cerr << "unable to parse date" << std::endl;
+			return std::vector<json>{};
+		}
+
+		if (json_date == latest_response_date)
+		{
+			current_set++;
+		}
+		else
+		{
+			current_set = 0;
+			set_start_it = json_it;
+			continue;
+		}
+
+		if (current_set == 20)
+		{
+			break;
+		}
+	}
+
+	if (current_set != 20)
+		return std::vector<json>{};
+
+	return std::vector<json>(json_it, std::next(json_it, -20));
 }
 
 int main()
@@ -239,8 +335,9 @@ int main()
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlutils::write_cb); // curl write callback
 
-	// -- get track & driver info from openf1
+	// -- get latest track, weather & driver info from openf1
 	auto location = get_latest_track_info(curl);
+	auto conditions = get_latest_weather(curl);
 
 	// create map of drivers numbers to drivers 
 	std::map<int, driver> driver_map;
@@ -252,35 +349,71 @@ int main()
 		}
 	}
 
-	auto drivers = get_latest_drivers(curl); // remove this
+	// read positions since beginning of latest session 
+	const std::string position_url = "https://api.openf1.org/v1/position?session_key=latest";
+	json pos_js = wait_for_response(curl, position_url);
+
+	// quick and dirty update of the postions of drivers in the driver map
+	auto update_pos = [](std::map<int, driver>& driver_map, const json& positions)
+	{	
+		int total_json = positions.size();
+		int processed = 0;
+
+		for (const auto& position : positions)
+		{
+			try
+			{
+				int driver_no, new_position;
+
+				driver_no = position.at("driver_number");
+				new_position = position.at("position");
+
+				driver_map[driver_no].sesh.position = new_position;
+				processed++;
+			}
+			catch(const std::exception& e)
+			{
+				std::cerr << "error parsing positions\n" << processed << '/' << total_json << " positions updated." << std::endl;
+				std::cerr << e.what() << '\n';
+			}
+		}
+	};
+	update_pos(driver_map, pos_js);
+
+	json intervals = wait_for_response(curl, openf1::build_request_string(openf1::endpoint::INTERVALS));
+
+	// std::vector<json> most_recent_driver_intervals;
+
+	// std::pair<int, bool> driver_numbers[] = {
+	// 	{1, false}, {4, false}, {5, false}, {6, false}, {7, false},
+	// 	{10, false}, {12, false}, {14, false}, {16, false}, {18, false},
+	// 	{22, false}, {23, false}, {27, false}, {30, false}, {31, false},
+	// 	{44, false}, {55, false}, {63, false}, {81, false}, {87, false}
+	// };
+
+	// for (const auto& interval : intervals)
+	// {
+
+	// }
+
 	
-    // auto table = Table({
-    //   { "POS",  "NAME", 		 "INTERVAL",   "TO LEAD",    "SECTOR 1", "SECTOR 2", "SECTOR 3", "LATEST LAP", "FASTEST LAP",  "PIT/OUT",  "TYRES",  "TYRE AGE" },
-    //   { "1",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "2",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "3",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "4",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "5",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "6",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "7",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "8",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "9",    "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "10",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "11",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "12",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "13",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "14",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "15",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "16",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "17",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "18",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    //   { "19",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "IN PITS",   "(S)" ,  "00 LAPS"  },
-    //   { "20",   "XXX | XXX",  "+0:00.000",  "+0:00.000",  "00.000",   "00.000",   "00.000",   "0:00.000",   "0:00.000",     "OUT LAP",   "(S)" ,  "00 LAPS"  },
-    // });
+
+	// represents the driver objects that will be displayed in the table
+	std::vector<driver> driver_display_vec;
+	for (auto& driver : driver_map)
+	{
+		driver_display_vec.push_back(driver.second);
+	}
+
+	// sort display drivers by their positions
+	std::sort(driver_display_vec.begin(), driver_display_vec.end(), [](const driver& dr, const driver& other)
+	{
+		return dr.sesh.position < other.sesh.position;
+	});
 
 	// -- create main ftxui widgets
-	Element header = create_location_header(*location);
-	Table table = create_drivers_table(*drivers);
+	Element header = create_location_header(*location, *conditions);
+	Table table = create_drivers_table(driver_display_vec);
 
 	// -- draw ui to terminal
 	draw_elements_to_term({ header, table.Render() });

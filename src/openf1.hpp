@@ -8,11 +8,13 @@ const std::string openf1 = "https://api.openf1.org/v1/";
 enum class endpoint
 {
     DRIVERS,
-    POSITION,
-    LAPS,
     INTERVALS,
+    LAPS,
+	MEETINGS,
+    POSITION,
+    RACECONTROL,
     STINTS,
-    RACECONTROL
+	WEATHER
 };
 
 enum class param
@@ -27,24 +29,22 @@ std::string endpoint_to_string(const endpoint &ep)
     {
     case endpoint::DRIVERS:
         return "drivers";
-        break;
+	case endpoint::INTERVALS:
+		return "intervals";
+	case endpoint::LAPS:
+		return "laps";
+	case endpoint::MEETINGS:
+	return "meetings";
     case endpoint::POSITION:
         return "position";
-        break;
-    case endpoint::LAPS:
-        return "laps";
-        break;
-    case endpoint::INTERVALS:
-        return "intervals";
-        break;
     case endpoint::STINTS:
         return "stints";
-        break;
     case endpoint::RACECONTROL:
         return "race_control";
-        break;
+	case endpoint::WEATHER:
+		return "weather";
     default:
-        break;
+	return "";
     }
 }
 
@@ -75,5 +75,20 @@ std::string right_angle_uri() { return "%3E"; }
 std::string openf1_query_base_url(const endpoint &ep)
 {
     return openf1_string(ep) + '?';
+}
+
+std::string build_request_string(const endpoint& ep, std::string session_key = "latest", std::string post_date = "")
+{
+	std::string ret;
+
+	if (ep == endpoint::MEETINGS)
+		ret = openf1_query_base_url(ep) + "meeting_key=" + session_key;
+	else
+		ret = openf1_query_base_url(ep) + "session_key=" + session_key;
+
+	if (!post_date.empty())
+		ret += '&' + "date" + right_angle_uri() + post_date;
+
+	return ret;
 }
 } // namespace openf1

@@ -33,11 +33,12 @@ std::string time_point_to_ISO8601(const system_clock::time_point &tp)
     return ss.str();
 }
 
-std::string time_now_as_string()
+std::string time_now_as_ISO8601()
 {
     return time_point_to_ISO8601(system_clock::now());
 }
 
+// milliseconds to 00.000
 std::string ms_to_short_string(milliseconds ms, int remove_minutes = 0)
 {
 	int seconds = ms.count() / 1000;
@@ -49,6 +50,7 @@ std::string ms_to_short_string(milliseconds ms, int remove_minutes = 0)
 	return os.str();
 }
 
+// milliseconds to 0:00.000
 std::string ms_to_long_string(milliseconds ms)
 {
 	int minutes = ms.count() / 60000;

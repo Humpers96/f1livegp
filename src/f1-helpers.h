@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 using namespace std::chrono;
+using namespace nlohmann;
 
 enum class SECTOR
 {
@@ -158,7 +159,7 @@ const char* shorten_team_name(std::string team_name)
 }
 }
 
-void from_json(const nlohmann::json &js, driver &dr)
+void from_json(const json &js, driver &dr)
 {
     js.at("name_acronym").get_to(dr.name);
     js.at("driver_number").get_to(dr.no);
@@ -168,10 +169,17 @@ void from_json(const nlohmann::json &js, driver &dr)
 	dr.team = shorten_team_name(js.at("team_name"));
 }
 
-void from_json(const nlohmann::json &js, track &tr)
+void from_json(const json &js, track &tr)
 {
     js.at("meeting_official_name").get_to(tr.broadcast_name);
     js.at("country_name").get_to(tr.country);
     js.at("location").get_to(tr.location);
     js.at("circuit_short_name").get_to(tr.track_name);
+}
+
+void from_json(const json& js, weather &we)
+{
+	js.at("air_temperature").get_to(we.air_temp);
+	js.at("track_temperature").get_to(we.track_temp);
+	we.raining = (int)js.at("rainfall");
 }
