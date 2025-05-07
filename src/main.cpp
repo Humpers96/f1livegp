@@ -1,10 +1,10 @@
 #include <curl/curl.h>
+#include <nlohmann/json.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/node.hpp>
 #include <ftxui/dom/table.hpp>
 #include <ftxui/screen/color.hpp>
 #include <ftxui/screen/screen.hpp>
-#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <iostream>
@@ -21,54 +21,29 @@ using namespace nlohmann;
 using namespace ftxui;
 
 /**
- * general execution order:
- * - req latest track details
- *   - req weather?
- * - req positions
- *   - first 20 entries are starting positions
- *   - anything following is a position *change*
- *   - so to get positions, get the first 20 and the apply changes 
- * - req tyres & age (possibly needs to be done after race start?)
- *
- * main req loop:
- * - timestamp = green flag + 0.25 or 0.5 seconds 
- *   - this has to be way larger, 5-10 seconds
+ * -- general execution order:
+ * - startup:
+ *   - req track details & weather condiitons
+ *   - req driver positions
+ *     - first 20 are starting positions, anything following are position changes
+ *     - iterate through all responses and update driver positions
+ *   - req tyres & age (unsure when this should be done)
+ *   - wait for green flag (after race session start timestamp?)
+ *     - there *is* a green flag event
+ *     - unclear if it's lights out or pits opening after race start
+ *     - may have to just commit to using for now and figure out later
+ *   - timestamp = green flag/session start + 5/10 seconds
  * 
- * - req position post timestamp
- * - req intervals (interval, gap to leader) post timestamp
- * // these two first
- * 
- * - req laps (sector 1/2/3, duration, lap number, is out lap) post timestamp
- * - req stints (compound, tyre age, lap start) post timestamp
- * - req race control (unsure what this will look like) post timestamp
- * - push requests into buffer(s) to process
- *   - reverse iterate through json and update drivers with req data via driver number
- *     - find first date post timestamp and parse everything after 
- *     - update timestamp to larger of latest date found or timestamp plus 5-10 seconds
- * // need some frame over the api to create/queue request and parse results based on
- * // complete driver sets, discrete sets & stallable and non-stallable requests
- * 	- drip feed results to the ui
- * 
- * - at some point requests should be separated out into failable & non-failable
- *   - failed requests should be skipped and data should be updated next loop
- * 	 - if a request doesn't return a full driver list it should be skipped, possibly skipping a full loop
- * 
- * req notes:
- * - do NOT forget about URI encoding ffs
- *   - should be simple enough to do manually
- *   - if not, should consider boost
- *     - would really rather not consider boost
- *
- *
- * main widgets:
- * - headers
- *   - gp title
- *   - country -- location -- track (check for matches & hide duplicates)
- *   - weather somewhere here?
- * - table
- * - race control ticker
+ * - main loop:
+ *   - req positions, intervals, (laps, stints, race control) between previous & next timestamp
+ *   - responses pushed into buffer(s)
+ *     - sort responses into buckets representing timeframes (0.25/0.5/1 seconds)
+ *   - create "update frames" from buckets
+ *   - over the next x seconds, drip feed update frames to UI
+ *   
+ *   - requests should probably happen in a secondary thread so app can continue to update while new requests are being made/parsed
+ *   - need to find a suitable timeframe to allow for requests to fail while still updating the ui 
  */
-
 
 
 // -- request functions
@@ -113,7 +88,6 @@ json wait_for_response(CURL* curl, const std::string& url/*, milliseconds timeou
 // - requests to f1 objects
 std::unique_ptr<track> get_latest_track_info(CURL* curl)
 {
-	//const std::string meeting_url = "https://api.openf1.org/v1/meetings?meeting_key=latest";
 	const std::string meeting_url = openf1::build_request_string(openf1::endpoint::MEETINGS);
 	json track_js = wait_for_response(curl, meeting_url);
 
@@ -122,31 +96,14 @@ std::unique_ptr<track> get_latest_track_info(CURL* curl)
 
 std::unique_ptr<weather> get_latest_weather(CURL* curl)
 {
-	//const std::string weather_url = "https://api.openf1.org/v1/weather?session_key=latest";
 	const std::string weather_url = openf1::build_request_string(openf1::endpoint::WEATHER);
 	json weather_js = wait_for_response(curl, weather_url);
 
 	return std::make_unique<weather>(weather_js.back());
 }
 
-std::unique_ptr<std::vector<driver>> get_latest_drivers(CURL* curl)
-{
-	//const std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
-	const std::string drivers_url = openf1::build_request_string(openf1::endpoint::DRIVERS);
-	json drivers_js = wait_for_response(curl, drivers_url);
-
-	std::vector<driver> drivers_vec;
-	for (const auto& js : drivers_js)
-	{
-		drivers_vec.emplace_back(js);
-	}
-
-	return std::make_unique<std::vector<driver>>(drivers_vec);
-}
-
 std::vector<driver> get_latest_drivers_vec(CURL* curl)
 {
-	// const std::string drivers_url = "https://api.openf1.org/v1/drivers?session_key=latest";
 	const std::string drivers_url = openf1::build_request_string(openf1::endpoint::DRIVERS);
 	json drivers_js = wait_for_response(curl, drivers_url);
 
@@ -160,6 +117,7 @@ std::vector<driver> get_latest_drivers_vec(CURL* curl)
 }
 
 // -- ftxui functions
+// - print ui
 void draw_elements_to_term(const std::vector<Element>& ui)
 {
 	auto document = vbox(ui);
@@ -170,16 +128,18 @@ void draw_elements_to_term(const std::vector<Element>& ui)
     std::cout << std::endl;
 }
 
-// - table
+// - apply table styling
 void decorate_table(Table &table)
 {
     table.SelectColumn(0).DecorateCells(align_right);                   // align driver numbers right
+    table.SelectColumn(0).Decorate(bold);                               // align driver numbers right
     table.SelectColumns(1, -1).DecorateCells(hcenter);                  // centre body cells
-    table.SelectColumn(1).DecorateCells(size(WIDTH, EQUAL, 11));         // NAME width
+    table.SelectColumn(1).DecorateCells(size(WIDTH, EQUAL, 11));        // NAME width
     table.SelectColumns(2, 3).DecorateCells(size(WIDTH, EQUAL, 11));    // INTERVAL/LEAD width
     table.SelectColumns(7, 8).DecorateCells(size(WIDTH, EQUAL, 10));    // LAST/BEST LAP width
     table.SelectColumn(9).DecorateCells(size(WIDTH, EQUAL, 9));         // PIT/OUT width
 
+    table.SelectRow(0).Decorate(bold);
     table.SelectRow(0).SeparatorVertical(LIGHT);
     table.SelectRow(0).Border(HEAVY);
     table.SelectColumn(0).Border(HEAVY);
@@ -197,6 +157,7 @@ void decorate_table(Table &table)
     last_column.DecorateCellsAlternateRow(bgcolor(Color::Grey30), 2, 1);
 }
 
+// - create table ui element
 Table create_drivers_table(const std::vector<driver>& drivers)
 {
 	std::vector<std::vector<std::string>> table_rows{
@@ -233,7 +194,7 @@ Table create_drivers_table(const std::vector<driver>& drivers)
 	return table;
 }
 
-// - headers
+// - create & style header ui element
 Element create_location_header(const track& location, const weather& conditions)
 {
 	auto location_header_strings = location.to_strings();
@@ -250,16 +211,19 @@ Element create_location_header(const track& location, const weather& conditions)
 
 	oss << std::setw(4) << conditions.air_temp;
 	std::string air_temp{ "Air Temp: " + oss.str() + ' ' };
+    oss.str("");
 
 	oss << conditions.track_temp;
 	std::string track_temp{ "Track temp: " + oss.str() + ' ' };
 	
-	auto upper = hbox(text(location.broadcast_name), filler(), text(air_temp)) | inverted;
+	auto upper = hbox(text(location.broadcast_name) | bold, filler(), text(air_temp)) | inverted;
 	auto lower = hbox(hbox(location_hbox), filler(), text(track_temp));
 
     return vbox(upper, lower);
 }
+// --
 
+// this needs a rethink/possibly removal given the number of edge cases and/or incomplete responses
 std::vector<json> parse_to_latest_set(const json& response_json)
 {
 	std::vector<json> ret;
@@ -335,11 +299,11 @@ int main()
 
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlutils::write_cb); // curl write callback
 
-	// -- get latest track, weather & driver info from openf1
+	// startup requests (track, weather & drivers)
 	auto location = get_latest_track_info(curl);
 	auto conditions = get_latest_weather(curl);
 
-	// create map of drivers numbers to drivers 
+	// create map of driver numbers to drivers
 	std::map<int, driver> driver_map;
 	{
 		auto driver_vec = get_latest_drivers_vec(curl);
@@ -380,23 +344,8 @@ int main()
 	};
 	update_pos(driver_map, pos_js);
 
+    // request intervals (to json)
 	json intervals = wait_for_response(curl, openf1::build_request_string(openf1::endpoint::INTERVALS));
-
-	// std::vector<json> most_recent_driver_intervals;
-
-	// std::pair<int, bool> driver_numbers[] = {
-	// 	{1, false}, {4, false}, {5, false}, {6, false}, {7, false},
-	// 	{10, false}, {12, false}, {14, false}, {16, false}, {18, false},
-	// 	{22, false}, {23, false}, {27, false}, {30, false}, {31, false},
-	// 	{44, false}, {55, false}, {63, false}, {81, false}, {87, false}
-	// };
-
-	// for (const auto& interval : intervals)
-	// {
-
-	// }
-
-	
 
 	// represents the driver objects that will be displayed in the table
 	std::vector<driver> driver_display_vec;
@@ -411,14 +360,14 @@ int main()
 		return dr.sesh.position < other.sesh.position;
 	});
 
-	// -- create main ftxui widgets
+	// create main ftxui widgets
 	Element header = create_location_header(*location, *conditions);
 	Table table = create_drivers_table(driver_display_vec);
 
-	// -- draw ui to terminal
+	// draw ui to terminal
 	draw_elements_to_term({ header, table.Render() });
 
-	// -- curl cleanup
+	// curl cleanup
     curl_easy_cleanup(curl);
 
     return 0;
