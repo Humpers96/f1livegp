@@ -88,7 +88,7 @@ json wait_for_response(CURL* curl, const std::string& url/*, milliseconds timeou
 // - requests to f1 objects
 std::unique_ptr<track> get_latest_track_info(CURL* curl)
 {
-	const std::string meeting_url = openf1::build_request_string(openf1::endpoint::MEETINGS);
+	const std::string meeting_url = openf1::build_req_string(openf1::endpoint::MEETINGS);
 	json track_js = wait_for_response(curl, meeting_url);
 
 	return std::make_unique<track>(*track_js.begin());
@@ -96,7 +96,7 @@ std::unique_ptr<track> get_latest_track_info(CURL* curl)
 
 std::unique_ptr<weather> get_latest_weather(CURL* curl)
 {
-	const std::string weather_url = openf1::build_request_string(openf1::endpoint::WEATHER);
+	const std::string weather_url = openf1::build_req_string(openf1::endpoint::WEATHER);
 	json weather_js = wait_for_response(curl, weather_url);
 
 	return std::make_unique<weather>(weather_js.back());
@@ -104,7 +104,7 @@ std::unique_ptr<weather> get_latest_weather(CURL* curl)
 
 std::vector<driver> get_latest_drivers_vec(CURL* curl)
 {
-	const std::string drivers_url = openf1::build_request_string(openf1::endpoint::DRIVERS);
+	const std::string drivers_url = openf1::build_req_string(openf1::endpoint::DRIVERS);
 	json drivers_js = wait_for_response(curl, drivers_url);
 
 	std::vector<driver> drivers_vec;
@@ -114,6 +114,15 @@ std::vector<driver> get_latest_drivers_vec(CURL* curl)
 	}
 
 	return drivers_vec;
+}
+
+std::string find_green_flag(CURL* curl)
+{
+	const std::string race_control_url = openf1::build_req_string(openf1::endpoint::RACECONTROL);
+
+	json race_events_js = wait_for_response(curl, race_control_url);
+    
+
 }
 
 // -- ftxui functions
@@ -344,8 +353,17 @@ int main()
 	};
 	update_pos(driver_map, pos_js);
 
+	milliseconds green_flag;
+
+
+
+
+
+
+
+
     // request intervals (to json)
-	json intervals = wait_for_response(curl, openf1::build_request_string(openf1::endpoint::INTERVALS));
+	json intervals = wait_for_response(curl, openf1::build_req_string(openf1::endpoint::INTERVALS));
 
 	// represents the driver objects that will be displayed in the table
 	std::vector<driver> driver_display_vec;

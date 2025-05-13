@@ -1,5 +1,7 @@
 #pragma once
 #include <chrono>
+#include <optional>
+
 #include <nlohmann/json.hpp>
 
 using namespace std::chrono;
@@ -25,9 +27,29 @@ enum class TYRE
     HARD
 };
 
+enum class CATEGORY
+{
+    FLAG,
+    DRS,
+    SAFETYCAR,
+    OTHER,
+};
+
+enum class FLAG
+{
+    NONE,
+    GREEN,
+    YELLOW,
+    DOUBLEYELLOW,
+    RED,
+    BLACKANDWHITE,
+    CHEQUERED,
+    CLEAR
+};
+
 class lap
 {
-  public:
+public:
     milliseconds sector_1;
     milliseconds sector_2;
     milliseconds sector_3;
@@ -38,8 +60,7 @@ class lap
 
 class times
 {
-  public:
-
+public:
     milliseconds interval;
     milliseconds gap;
 
@@ -50,7 +71,7 @@ class times
 
 class session
 {
-  public:
+public:
     int position;
     int lap;
 
@@ -61,25 +82,25 @@ class session
 
 class driver
 {
-  public:
+public:
     int no;
     std::string name;
-	std::string team;
-	int team_colour_hex;
+    std::string team;
+    int team_colour_hex;
     session sesh;
 };
 
 class weather
 {
-	public:
-	float air_temp;
-	float track_temp;
-	bool raining;
+public:
+    float air_temp;
+    float track_temp;
+    bool raining;
 };
 
 class track
 {
-  public:
+public:
     std::string broadcast_name;
     std::string country;
     std::string location;
@@ -99,74 +120,87 @@ class track
     }
 };
 
-namespace 
+class race_event
 {
-std::vector<std::string> team_names = {
-    "Red Bull Racing",
-    "McLaren",
-    "Kick Sauber",
-    "Racing Bulls",
-    "Alpine",
-    "Mercedes",
-    "Aston Martin",
-    "Ferrari",
-    "Williams",
-    "Haas F1 Team"
+public:
+
+    CATEGORY cat;
+    std::string message;
+    std::optional<int> driver_number;
+    std::optional<FLAG> flag;
+
+private:
+
 };
 
-const char* shorten_team_name(std::string team_name)
+namespace
 {
-	if (team_name == "Red Bull Racing")
-	{
-		return "RBR";
-    } 
-	else if (team_name == "McLaren")
-	{
-		return "MCL";
-    } 
-	else if (team_name == "Kick Sauber")
-	{
-		return "SAU";
-    } 
-	else if (team_name == "Racing Bulls")
-	{
-		return "VCA";
-    } 
-	else if (team_name == "Alpine")
-	{
-		return "ALP";
-    } 
-	else if (team_name == "Mercedes")
-	{
-		return "MER";
-    } 
-	else if (team_name == "Aston Martin")
-	{
-		return "AST";
-    } 
-	else if (team_name == "Ferrari")
-	{
-		return "FER";
-    } 
-	else if (team_name == "Williams")
-	{
-		return "WIL";
-    } 
-	else if (team_name == "Haas F1 Team")
-	{
-		return "HAA";
+    std::vector<std::string> team_names = {
+        "Red Bull Racing",
+        "McLaren",
+        "Kick Sauber",
+        "Racing Bulls",
+        "Alpine",
+        "Mercedes",
+        "Aston Martin",
+        "Ferrari",
+        "Williams",
+        "Haas F1 Team"
+    };
+
+    const char *shorten_team_name(std::string team_name)
+    {
+        if (team_name == "Red Bull Racing")
+        {
+            return "RBR";
+        }
+        else if (team_name == "McLaren")
+        {
+            return "MCL";
+        }
+        else if (team_name == "Kick Sauber")
+        {
+            return "SAU";
+        }
+        else if (team_name == "Racing Bulls")
+        {
+            return "VCA";
+        }
+        else if (team_name == "Alpine")
+        {
+            return "ALP";
+        }
+        else if (team_name == "Mercedes")
+        {
+            return "MER";
+        }
+        else if (team_name == "Aston Martin")
+        {
+            return "AST";
+        }
+        else if (team_name == "Ferrari")
+        {
+            return "FER";
+        }
+        else if (team_name == "Williams")
+        {
+            return "WIL";
+        }
+        else if (team_name == "Haas F1 Team")
+        {
+            return "HAA";
+        }
     }
-}
 }
 
 void from_json(const json &js, driver &dr)
 {
     js.at("name_acronym").get_to(dr.name);
     js.at("driver_number").get_to(dr.no);
-	std::string col = js.at("team_colour");
+    std::string col = js.at("team_colour");
 
-	dr.team_colour_hex = std::stoi((std::string)js.at("team_colour"), 0, 16);
-	dr.team = shorten_team_name(js.at("team_name"));
+    dr.team_colour_hex = std::stoi((std::string)js.at("team_colour"), 0, 16);
+    dr.team = shorten_team_name(js.at("team_name"));
 }
 
 void from_json(const json &js, track &tr)
@@ -177,9 +211,17 @@ void from_json(const json &js, track &tr)
     js.at("circuit_short_name").get_to(tr.track_name);
 }
 
-void from_json(const json& js, weather &we)
+void from_json(const json &js, weather &we)
 {
-	js.at("air_temperature").get_to(we.air_temp);
-	js.at("track_temperature").get_to(we.track_temp);
-	we.raining = (int)js.at("rainfall");
+    js.at("air_temperature").get_to(we.air_temp);
+    js.at("track_temperature").get_to(we.track_temp);
+    we.raining = (int)js.at("rainfall");
+}
+
+void from_json(const json &js, race_event& ev)
+{
+    js.at("category").get_to(ev.cat);
+    js.at("message").get_to(ev.message);
+    ev.driver_number = js.at("driver_number");
+    ev.flag = js.at("flag");
 }

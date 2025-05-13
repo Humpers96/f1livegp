@@ -1,6 +1,10 @@
 #pragma once
 #include <string>
+#include <chrono>
 
+#include "utils.hpp"
+
+using namespace std::chrono;
 namespace openf1
 {
 const std::string openf1 = "https://api.openf1.org/v1/";
@@ -15,12 +19,6 @@ enum class endpoint
     RACECONTROL,
     STINTS,
 	WEATHER
-};
-
-enum class param
-{
-    DATE,
-    DRIVERNUMBER,
 };
 
 std::string endpoint_to_string(const endpoint &ep)
@@ -48,21 +46,6 @@ std::string endpoint_to_string(const endpoint &ep)
     }
 }
 
-std::string param_to_string(const param &p)
-{
-    switch (p)
-    {
-    case param::DATE:
-        return "date";
-        break;
-    case param::DRIVERNUMBER:
-        return "driver_number";
-        break;
-    default:
-        break;
-    }
-}
-
 std::string openf1_string(const endpoint &ep)
 {
     return openf1 + endpoint_to_string(ep);
@@ -77,18 +60,25 @@ std::string openf1_query_base_url(const endpoint &ep)
     return openf1_string(ep) + '?';
 }
 
-std::string build_request_string(const endpoint& ep, std::string session_key = "latest", std::string post_date = "")
+const std::string build_req_string(const endpoint& ep, const std::string& session_key = "latest", 
+    milliseconds date_from = std::chrono::milliseconds(0), 
+    milliseconds date_to = std::chrono::milliseconds(0))
 {
-	std::string ret;
+    std::string ret;
 
-	if (ep == endpoint::MEETINGS)
-		ret = openf1_query_base_url(ep) + "meeting_key=" + session_key;
+    if (ep != endpoint::MEETINGS)
+        ret = openf1_query_base_url(ep) + "session_key=" + session_key;
 	else
-		ret = openf1_query_base_url(ep) + "session_key=" + session_key;
+        ret = openf1_query_base_url(ep) + "meeting_key=" + session_key;
 
-	if (!post_date.empty())
-		ret += '&' + "date" + right_angle_uri() + post_date;
+    if (date_from.count() > 0)
+    {
+        ret += '&' + "date" + right_angle_uri() + strutils::ms_to_ISO8601(date_from);
+    }
 
-	return ret;
+    if (date_to.count() > 0)
+    {
+        ret += '&' + "date" + left_angle_uri() + strutils::ms_to_ISO8601(date_to);
+    }
 }
 } // namespace openf1

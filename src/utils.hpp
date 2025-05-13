@@ -33,6 +33,11 @@ std::string time_point_to_ISO8601(const system_clock::time_point &tp)
     return ss.str();
 }
 
+std::string ms_to_ISO8601(const milliseconds& ms)
+{
+    return time_point_to_ISO8601(ms_to_time_point(ms));
+}
+
 std::string time_now_as_ISO8601()
 {
     return time_point_to_ISO8601(system_clock::now());
