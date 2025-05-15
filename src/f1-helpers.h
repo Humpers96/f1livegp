@@ -222,7 +222,7 @@ void from_json(const json &js, weather &we)
 
 void from_json(const json &js, race_event& ev)
 {
-    js.at("category").get_to(ev.cat);
+    //js.at("category").get_to(ev.cat); // need a conversion here
     js.at("message").get_to(ev.message);
     ev.driver_number = js.at("driver_number");
     ev.flag = js.at("flag");
