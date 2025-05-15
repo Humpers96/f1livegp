@@ -80,5 +80,7 @@ const std::string build_req_string(const endpoint& ep, const std::string& sessio
     {
         ret += '&' + "date" + left_angle_uri() + strutils::ms_to_ISO8601(date_to);
     }
+
+	return ret;
 }
 } // namespace openf1

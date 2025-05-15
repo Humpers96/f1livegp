@@ -126,8 +126,10 @@ public:
 
     CATEGORY cat;
     std::string message;
+	
     std::optional<int> driver_number;
     std::optional<FLAG> flag;
+	std::optional<int> lap;
 
 private:
 

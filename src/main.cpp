@@ -121,8 +121,22 @@ std::string find_green_flag(CURL* curl)
 	const std::string race_control_url = openf1::build_req_string(openf1::endpoint::RACECONTROL);
 
 	json race_events_js = wait_for_response(curl, race_control_url);
-    
 
+	for (auto it = race_events_js.begin(); it != race_events_js.end(); ++it)
+	{
+		// this should be some kind of conversion check to enum (for category)? 
+		const std::string message = it->at("message");
+
+		if (message.empty())
+			continue;
+
+		if (message.find("GREEN LIGHT") == std::string::npos)
+			continue;
+		
+
+	}
+
+	return "";
 }
 
 // -- ftxui functions
@@ -353,7 +367,7 @@ int main()
 	};
 	update_pos(driver_map, pos_js);
 
-	milliseconds green_flag;
+	milliseconds race_start;
 
 
 
